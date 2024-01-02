@@ -84,15 +84,22 @@ impSpace s = ns
             '\n':' ':_ -> stack %~ (\x -> x++[last x]) $ moveCur s (+2)
             '\n':'\t':_ -> stack %~ (\x -> take (length x - 2) x ++ [last x, last $ init x]) $ moveCur s (+2)
             '\n':'\n':_ -> stack %~ init $ moveCur s (+2)
-            _:_ -> undefined
-            [] -> undefined
+            _:_ -> s
+            [] -> s
 
-
-
+process :: LangState -> LangState
+process s = ns
+    where
+        co = drop (s^.prog . cursor) $ s^.(prog . code)
+        ns = case co of 
+            ' ':_ -> process $ impSpace (moveCur s (+1))
+            _:_ -> s
+            [] -> s
 
 whitespace :: String -> String -> Result
 whitespace code input = undefined
 
 main :: IO ()
 main = do
-    print $ either id id (whitespace "hello"  "hello")
+    let i = makeLangState "   \t  \n \n    \t\n \n\t" ""
+    print $ process i
