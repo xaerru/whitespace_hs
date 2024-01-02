@@ -87,17 +87,31 @@ impSpace s = ns
             _:_ -> s
             [] -> s
 
+impTabSpace :: LangState -> LangState
+impTabSpace s = ns
+    where 
+        co = drop (s^.prog . cursor) $ s^.(prog . code)
+        ns = case co of
+            ' ':' ':_ ->  stack %~ (\x -> take (length x-2) x++[x!!(length x-2)+x!!(length x-1)]) $ moveCur s (+2)
+            ' ':'\t':_ ->  stack %~ (\x -> take (length x-2) x++[x!!(length x-2)-x!!(length x-1)]) $ moveCur s (+2)
+            ' ':'\n':_ ->  stack %~ (\x -> take (length x-2) x++[x!!(length x-2)*x!!(length x-1)]) $ moveCur s (+2)
+            '\t':' ':_ ->  stack %~ (\x -> take (length x-2) x++[x!!(length x-2)`div`x!!(length x-1)]) $ moveCur s (+2) -- Add error
+            '\t':'\t':_ ->  stack %~ (\x -> take (length x-2) x++[x!!(length x-2)`mod`x!!(length x-1)]) $ moveCur s (+2) -- Add error
+            _:_ -> s
+            [] -> s
+
 process :: LangState -> LangState
 process s = ns
     where
         co = drop (s^.prog . cursor) $ s^.(prog . code)
         ns = case co of 
             ' ':_ -> process $ impSpace (moveCur s (+1))
+            '\t':' ':_ -> process $ impTabSpace (moveCur s (+2))
             _:_ -> s
             [] -> s
 
-whitespace :: String -> String -> Result
-whitespace code input = undefined
+--whitespace :: String -> String -> Result
+--whitespace code input = undefined
 
 main :: IO ()
 main = do
