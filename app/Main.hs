@@ -40,8 +40,7 @@ parseNumber s
     | x == '\t' = (-1 * fst e, snd e)
     | x == ' '  = e
     where
-        c = view (prog . cursor) s
-        co = drop c $ view (prog . code) s
+        co = drop (view (prog . cursor) s) $ view (prog . code) s
         x = head co
         xs = tail co
         r = parseDecFromBin xs
@@ -51,6 +50,12 @@ parseNumber s
             Nothing-> (0, set lerror "NumParseError" ns)
 parseNumber (LangState (Prog (_:_) _)_ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
 parseNumber (LangState (Prog [] _)_ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
+
+moveCur :: LangState -> (Int -> Int) -> LangState
+moveCur s f = (prog . cursor) %~ f $ s
+
+parseNumberMoveCur :: LangState -> (Int->Int) -> (Int, LangState)
+parseNumberMoveCur s f = parseNumber $ moveCur s f
 
 parseLabel :: String -> Maybe String
 parseLabel (c:cs)
@@ -62,17 +67,27 @@ parseLabel [] = Nothing
 impSpace :: LangState -> LangState
 impSpace s = ns
     where
-        c = view (prog . cursor) s
-        co = drop c $ view (prog . code) s
+        co = drop (s^.prog . cursor) $ s^.(prog . code)
         ns = case co of
-            ' ':_ ->  nss
+            ' ':_ ->  stack %~ (++[n]) $ s1
                 where
-                    n = parseNumber (over (prog . cursor) (+1) s)
-                    nss = over stack (++[fst n]) (snd n)
-            '\t':' ':_ -> nss
+                    (n, s1) = parseNumberMoveCur s (+1)
+            '\t':' ':_ -> stack %~ (\x -> x ++ [x!!(length x - n)]) $ s1
                 where
-                    n = parseNumber (over (prog . cursor) (+1) s)
-                    nss = over stack (\x -> x++[x!!(length x - fst n)]) (snd n)
+                    (n, s1) = parseNumberMoveCur s (+2)
+            '\t':'\n':_ -> if n > length (view stack s) || n < 0 then
+                                stack %~ (\x -> [last x]) $ s1
+                            else
+                                stack %~ (\x -> take (length x - n) x) $ s1
+                where 
+                    (n, s1) = parseNumberMoveCur s (+2)
+            '\n':' ':_ -> stack %~ (\x -> x++[last x]) $ moveCur s (+2)
+            '\n':'\t':_ -> stack %~ (\x -> take (length x - 2) x ++ [last x, last $ init x]) $ moveCur s (+2)
+            '\n':'\n':_ -> stack %~ init $ moveCur s (+2)
+            _:_ -> undefined
+            [] -> undefined
+
+
 
 
 whitespace :: String -> String -> Result
