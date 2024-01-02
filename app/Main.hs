@@ -5,12 +5,14 @@ module Main where
 import Control.Lens
 import Data.List
 import Data.Maybe
+import Data.Map (Map)
+import qualified Data.Map as Map
 
 type ErrorMsg = String
 type Result = Either ErrorMsg String 
 
 data Prog = Prog {_code::String, _cursor::Int} deriving Show
-data LangState = LangState {_prog::Prog, _input::String, _output::String, _stack::[Int], _lerror::String} deriving Show
+data LangState = LangState {_prog::Prog, _input::String, _output::String, _stack::[Int], _heap::Map Int Int, _lerror::String} deriving Show
 makeLenses ''Prog
 makeLenses ''LangState
 
@@ -25,7 +27,7 @@ cursorAfterNextTerminal s = np
             Nothing -> set lerror "Error" s
 
 makeLangState :: String -> String -> LangState
-makeLangState c i = LangState {_prog=Prog{_code=c,_cursor=0}, _input=i, _output="", _stack=[], _lerror=""}
+makeLangState c i = LangState {_prog=Prog{_code=c,_cursor=0}, _input=i, _output="", _stack=[], _heap=Map.empty, _lerror=""}
 
 parseDecFromBin :: String -> Maybe Int
 parseDecFromBin (c:cs)
@@ -48,8 +50,8 @@ parseNumber s
         e = case r of 
             Just n -> (n, ns)
             Nothing-> (0, set lerror "NumParseError" ns)
-parseNumber (LangState (Prog (_:_) _)_ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
-parseNumber (LangState (Prog [] _)_ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
+parseNumber (LangState (Prog (_:_) _)_ _ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
+parseNumber (LangState (Prog [] _)_ _ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
 
 moveCur :: LangState -> (Int -> Int) -> LangState
 moveCur s f = (prog . cursor) %~ f $ s
@@ -100,6 +102,21 @@ impTabSpace s = ns
             _:_ -> s
             [] -> s
 
+impTabTab :: LangState -> LangState
+impTabTab s = ns
+    where 
+        co = drop (s^.prog . cursor) $ s^.(prog . code)
+        ns = case co of
+            ' ':_ ->  stack %~ (\x -> take (length x-2) x) $ addToMap (s1^.stack)
+                where
+                    s1 = moveCur s (+1)
+                    addToMap x = heap %~ Map.insert (x!!(length x - 2)) (x!!(length x - 1)) $ s1
+            '\t':_ ->  pushStack $ moveCur s (+1)
+                where
+                    pushStack s1 = stack %~ (\x->init x++[Map.findWithDefault 0 (last x) (s1^.heap)]) $ s1
+            _:_ -> s
+            [] -> s
+
 process :: LangState -> LangState
 process s = ns
     where
@@ -107,6 +124,7 @@ process s = ns
         ns = case co of 
             ' ':_ -> process $ impSpace (moveCur s (+1))
             '\t':' ':_ -> process $ impTabSpace (moveCur s (+2))
+            '\t':'\t':_ -> process $ impTabTab (moveCur s (+2))
             _:_ -> s
             [] -> s
 
