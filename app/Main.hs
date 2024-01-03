@@ -125,23 +125,23 @@ impTabTab s = ns
       [] -> s
 
 parseNumberFromInput :: LangState -> (Int, LangState)
-parseNumberFromInput s = (read (takeWhile (/= '\n') (s^.input))::Int, input %~ tail . dropWhile (/= '\n') $ s)
+parseNumberFromInput s = (read (takeWhile (/= '\n') (s ^. input)) :: Int, input %~ tail . dropWhile (/= '\n') $ s)
 
 impTabLineFeed :: LangState -> LangState
 impTabLineFeed s = ns
   where
     ns = case dropBeforeCursor s of
-      ' ' : ' ' : _ -> stack %~ init $ output %~ (++[chr $ last (s^.stack)]) $ moveCur s (+2)
-      ' ' : '\t' : _ -> stack %~ init $ output %~ (++(show $ last (s^.stack))) $ moveCur s (+2)
+      ' ' : ' ' : _ -> stack %~ init $ output %~ (++ [chr $ last (s ^. stack)]) $ moveCur s (+ 2)
+      ' ' : '\t' : _ -> stack %~ init $ output %~ (++ (show $ last (s ^. stack))) $ moveCur s (+ 2)
       '\t' : ' ' : _ -> heap %~ Map.insert b a $ stack %~ init $ s1
         where
-          a = ord $ head (s^.input)
-          s1 = input %~ tail $ moveCur s (+2)
-          b = last (s^.stack)
+          a = ord $ head (s ^. input)
+          s1 = input %~ tail $ moveCur s (+ 2)
+          b = last (s ^. stack)
       '\t' : '\t' : _ -> heap %~ Map.insert b a $ stack %~ init $ s1
         where
-          (a, s1) = parseNumberFromInput $ moveCur s (+2)
-          b = last (s^.stack)
+          (a, s1) = parseNumberFromInput $ moveCur s (+ 2)
+          b = last (s ^. stack)
       _ : _ -> s
       [] -> s
 
@@ -151,23 +151,25 @@ impLineFeed s = ns
     ns = case dropBeforeCursor s of
       ' ' : ' ' : _ -> nss
         where
-          s1 = moveCur s (+2)
+          s1 = moveCur s (+ 2)
           l = parseLabel $ dropBeforeCursor s1
           s2 = cursorAfterNextTerminal s1
           nss = case l of
-            Just n -> labels %~ Map.insert n (s2^.prog.cursor) $ s2
+            Just n -> labels %~ Map.insert n (s2 ^. prog . cursor) $ s2
             Nothing -> lerror %~ const "LabelParseError" $ s2
       ' ' : '\t' : _ -> nss
         where
-          s1 = moveCur s (+2)
+          s1 = moveCur s (+ 2)
           l = parseLabel $ dropBeforeCursor s1
           s2 = cursorAfterNextTerminal s1
-          s3 = prog.counter %~ const (s2^.prog.cursor) $ s2
+          s3 = prog . counter %~ const (s2 ^. prog . cursor) $ s2
           nss = case l of
-            Just n -> prog.cursor %~ const (Map.findWithDefault 0 n (s^.labels)) $ s3
+            Just n -> prog . cursor %~ const (Map.findWithDefault 0 n (s ^. labels)) $ s3
             Nothing -> lerror %~ const "LabelParseError" $ s2
-      '\t' : '\n' : _ -> if (s^.prog.counter)==(-1) then moveCur s (+2)
-                         else prog.cursor %~ const (s^.prog.counter) $ s
+      '\t' : '\n' : _ ->
+        if (s ^. prog . counter) == (-1)
+          then moveCur s (+ 2)
+          else prog . cursor %~ const (-1) $ prog . cursor %~ const (s ^. prog . counter) $ s
       _ : _ -> s
       [] -> s
 
