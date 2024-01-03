@@ -13,15 +13,15 @@ type ErrorMsg = String
 
 type Result = Either ErrorMsg String
 
-data Prog = Prog {_code :: String, _cursor :: Int} deriving (Show)
+data Prog = Prog {_code :: String, _cursor :: Int, _counter :: Int} deriving (Show)
 
-data LangState = LangState {_prog :: Prog, _input :: String, _output :: String, _stack :: [Int], _heap :: Map Int Int, _lerror :: String} deriving (Show)
+data LangState = LangState {_prog :: Prog, _input :: String, _output :: String, _stack :: [Int], _labels :: Map String Int, _heap :: Map Int Int, _lerror :: String} deriving (Show)
 
 makeLenses ''Prog
 makeLenses ''LangState
 
 makeLangState :: String -> String -> LangState
-makeLangState c i = LangState {_prog = Prog {_code = c, _cursor = 0}, _input = i, _output = "", _stack = [], _heap = Map.empty, _lerror = ""}
+makeLangState c i = LangState {_prog = Prog {_code = c, _cursor = 0, _counter = -1}, _input = i, _output = "", _stack = [], _labels = Map.empty, _heap = Map.empty, _lerror = ""}
 
 cursorAfterNextTerminal :: LangState -> LangState
 cursorAfterNextTerminal s = np
@@ -60,8 +60,8 @@ parseNumber s
     e = case r of
       Just n -> (n, ns)
       Nothing -> (0, set lerror "NumParseError" ns)
-parseNumber (LangState (Prog (_ : _) _) _ _ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
-parseNumber (LangState (Prog [] _) _ _ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
+parseNumber (LangState (Prog (_ : _) _ _) _ _ _ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
+parseNumber (LangState (Prog [] _ _) _ _ _ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
 
 parseNumberMoveCur :: LangState -> (Int -> Int) -> (Int, LangState)
 parseNumberMoveCur s f = parseNumber $ moveCur s f
@@ -145,11 +145,38 @@ impTabLineFeed s = ns
       _ : _ -> s
       [] -> s
 
+impLineFeed :: LangState -> LangState
+impLineFeed s = ns
+  where
+    ns = case dropBeforeCursor s of
+      ' ' : ' ' : _ -> nss
+        where
+          s1 = moveCur s (+2)
+          l = parseLabel $ dropBeforeCursor s1
+          s2 = cursorAfterNextTerminal s1
+          nss = case l of
+            Just n -> labels %~ Map.insert n (s2^.prog.cursor) $ s2
+            Nothing -> lerror %~ const "LabelParseError" $ s2
+      ' ' : '\t' : _ -> nss
+        where
+          s1 = moveCur s (+2)
+          l = parseLabel $ dropBeforeCursor s1
+          s2 = cursorAfterNextTerminal s1
+          s3 = prog.counter %~ const (s2^.prog.cursor) $ s2
+          nss = case l of
+            Just n -> prog.cursor %~ const (Map.findWithDefault 0 n (s^.labels)) $ s3
+            Nothing -> lerror %~ const "LabelParseError" $ s2
+      '\t' : '\n' : _ -> if (s^.prog.counter)==(-1) then moveCur s (+2)
+                         else prog.cursor %~ const (s^.prog.counter) $ s
+      _ : _ -> s
+      [] -> s
+
 process :: LangState -> LangState
 process s = ns
   where
     ns = case dropBeforeCursor s of
       ' ' : _ -> process $ impSpace (moveCur s (+ 1))
+      '\n' : _ -> process $ impLineFeed (moveCur s (+ 1))
       '\t' : ' ' : _ -> process $ impTabSpace (moveCur s (+ 2))
       '\t' : '\t' : _ -> process $ impTabTab (moveCur s (+ 2))
       '\t' : '\n' : _ -> process $ impTabLineFeed (moveCur s (+ 2))
