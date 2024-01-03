@@ -3,6 +3,7 @@
 module Main where
 
 import Control.Lens
+import Data.Char
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -123,6 +124,27 @@ impTabTab s = ns
       _ : _ -> s
       [] -> s
 
+parseNumberFromInput :: LangState -> (Int, LangState)
+parseNumberFromInput s = (read (takeWhile (/= '\n') (s^.input))::Int, input %~ tail . dropWhile (/= '\n') $ s)
+
+impTabLineFeed :: LangState -> LangState
+impTabLineFeed s = ns
+  where
+    ns = case dropBeforeCursor s of
+      ' ' : ' ' : _ -> stack %~ init $ output %~ (++[chr $ last (s^.stack)]) $ moveCur s (+2)
+      ' ' : '\t' : _ -> stack %~ init $ output %~ (++(show $ last (s^.stack))) $ moveCur s (+2)
+      '\t' : ' ' : _ -> heap %~ Map.insert b a $ stack %~ init $ s1
+        where
+          a = ord $ head (s^.input)
+          s1 = input %~ tail $ moveCur s (+2)
+          b = last (s^.stack)
+      '\t' : '\t' : _ -> heap %~ Map.insert b a $ stack %~ init $ s1
+        where
+          (a, s1) = parseNumberFromInput $ moveCur s (+2)
+          b = last (s^.stack)
+      _ : _ -> s
+      [] -> s
+
 process :: LangState -> LangState
 process s = ns
   where
@@ -130,6 +152,7 @@ process s = ns
       ' ' : _ -> process $ impSpace (moveCur s (+ 1))
       '\t' : ' ' : _ -> process $ impTabSpace (moveCur s (+ 2))
       '\t' : '\t' : _ -> process $ impTabTab (moveCur s (+ 2))
+      '\t' : '\n' : _ -> process $ impTabLineFeed (moveCur s (+ 2))
       _ : _ -> s
       [] -> s
 
