@@ -21,7 +21,7 @@ makeLenses ''Prog
 makeLenses ''LangState
 
 makeLangState :: String -> String -> LangState
-makeLangState c i = LangState {_prog = Prog {_code = c, _cursor = 0, _counter = -1}, _input = i, _output = "", _stack = [], _labels = Map.empty, _heap = Map.empty, _lerror = ""}
+makeLangState c i = LangState {_prog = Prog {_code = filter (\x->x==' '||x=='\t'||x=='\n') c, _cursor = 0, _counter = -1}, _input = i, _output = "", _stack = [], _labels = Map.empty, _heap = Map.empty, _lerror = ""}
 
 cursorAfterNextTerminal :: LangState -> LangState
 cursorAfterNextTerminal s = np
@@ -80,19 +80,19 @@ impSpace s = ns
       ' ' : _ -> stack %~ (++ [n]) $ s1
         where
           (n, s1) = parseNumberMoveCur s (+ 1)
-      '\t' : ' ' : _ -> stack %~ (\x -> x ++ [x !! (length x - n)]) $ s1
+      '\t' : ' ' : _ -> stack %~ (\x -> x ++ [x !! (length x - n - 1)]) $ s1
         where
           (n, s1) = parseNumberMoveCur s (+ 2)
       '\t' : '\n' : _ ->
-        if n > length (view stack s) || n < 0
+        if n >= length (view stack s1) || n < 0
           then stack %~ (\x -> [last x]) $ s1
-          else stack %~ (\x -> take (length x - n) x) $ s1
+          else stack %~ (\x -> take (length x - n + 1) x) $ s1
         where
           (n, s1) = parseNumberMoveCur s (+ 2)
       '\n' : ' ' : _ -> stack %~ (\x -> x ++ [last x]) $ moveCur s (+ 2)
       '\n' : '\t' : _ -> stack %~ (\x -> take (length x - 2) x ++ [last x, last $ init x]) $ moveCur s (+ 2)
       '\n' : '\n' : _ -> stack %~ init $ moveCur s (+ 2)
-      _ : _ -> s
+      _ : _ -> moveCur s (+1)
       [] -> s
 
 stackBinOp :: (Int -> Int -> Int) -> [Int] -> [Int]
@@ -107,7 +107,7 @@ impTabSpace s = ns
       ' ' : '\n' : _ -> stack %~ stackBinOp (*) $ moveCur s (+ 2)
       '\t' : ' ' : _ -> stack %~ stackBinOp div $ moveCur s (+ 2) -- Add error
       '\t' : '\t' : _ -> stack %~ stackBinOp mod $ moveCur s (+ 2) -- Add error
-      _ : _ -> s
+      _ : _ -> moveCur s (+1)
       [] -> s
 
 impTabTab :: LangState -> LangState
@@ -121,7 +121,7 @@ impTabTab s = ns
       '\t' : _ -> pushStack $ moveCur s (+ 1)
         where
           pushStack s1 = stack %~ (\x -> init x ++ [Map.findWithDefault 0 (last x) (s1 ^. heap)]) $ s1
-      _ : _ -> s
+      _ : _ -> moveCur s (+1)
       [] -> s
 
 parseNumberFromInput :: LangState -> (Int, LangState)
@@ -142,7 +142,7 @@ impTabLineFeed s = ns
         where
           (a, s1) = parseNumberFromInput $ moveCur s (+ 2)
           b = last (s ^. stack)
-      _ : _ -> s
+      _ : _ -> moveCur s (+1)
       [] -> s
 
 impLineFeed :: LangState -> LangState
@@ -170,7 +170,7 @@ impLineFeed s = ns
         if (s ^. prog . counter) == (-1)
           then moveCur s (+ 2)
           else prog . cursor %~ const (-1) $ prog . cursor %~ const (s ^. prog . counter) $ s
-      _ : _ -> s
+      _ : _ -> moveCur s (+1)
       [] -> s
 
 process :: LangState -> LangState
@@ -182,11 +182,17 @@ process s = ns
       '\t' : ' ' : _ -> process $ impTabSpace (moveCur s (+ 2))
       '\t' : '\t' : _ -> process $ impTabTab (moveCur s (+ 2))
       '\t' : '\n' : _ -> process $ impTabLineFeed (moveCur s (+ 2))
-      _ : _ -> s
+      _ : _ -> process $ moveCur s (+1)
       [] -> s
 
--- whitespace :: String -> String -> Result
--- whitespace code input = undefined
+whitespace :: String -> String -> Result
+whitespace "" "" = Left "error"
+whitespace c i = r
+  where
+    s = process $ makeLangState c i
+    r = case s^.lerror of
+          "" -> Right (s^.output)
+          _  -> Left (s^.lerror)
 
 main :: IO ()
 main = do
