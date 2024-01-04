@@ -86,7 +86,7 @@ impSpace s = ns
       '\t' : '\n' : _ ->
         if n >= length (view stack s1) || n < 0
           then stack %~ (\x -> [last x]) $ s1
-          else stack %~ (\x -> take (length x - n + 1) x) $ s1
+          else stack %~ (\x -> take (length x - n - 1) x ++ [last x]) $ s1
         where
           (n, s1) = parseNumberMoveCur s (+ 2)
       '\n' : ' ' : _ -> stack %~ (\x -> x ++ [last x]) $ moveCur s (+ 2)
