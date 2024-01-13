@@ -3,6 +3,7 @@
 module Main where
 
 import Control.Lens
+import Text.Read
 import Data.Char
 import Data.List
 import Data.Map (Map)
@@ -156,8 +157,16 @@ impTabTab s = ns
       _ : _ -> moveCur s (+1)
       [] -> s
 
-parseNumberFromInput :: LangState -> (Int, LangState)
-parseNumberFromInput s = (read (takeWhile (/= '\n') (s ^. input)) :: Int, input %~ tail . dropWhile (/= '\n') $ s)
+parseNumberFromInput :: LangState -> (Maybe Int, LangState)
+parseNumberFromInput s = acs
+  where
+    c1 = '\n' `elem` (s^.input)
+    a = readMaybe (takeWhile (/= '\n') (s ^. input)) :: Maybe Int
+    acs = case a of
+            Just a' -> (Just a', input %~ tail . dropWhile (/= '\n') $ s)
+            Nothing -> if c1 
+                       then (Nothing, errState "Couldn't Parse number from input")
+                       else (Nothing, errState "Invalid Number")
 
 impTabLineFeed :: LangState -> LangState
 impTabLineFeed s = ns
@@ -169,15 +178,28 @@ impTabLineFeed s = ns
       ' ' : '\t' : _ -> if null (s^.stack) then errState "Empty Stack" else cs
         where
           cs = stack %~ init $ output %~ (++ (show $ last (s ^. stack))) $ moveCur s (+ 2)
-      '\t' : ' ' : _ -> heap %~ Map.insert b a $ stack %~ init $ s1
+      '\t' : ' ' : _ -> cs
         where
-          a = ord $ head (s ^. input)
+          c1 = not $ null $ s^.input
+          a = if c1 then Just (ord $ head (s^.input)) else Nothing
           s1 = input %~ tail $ moveCur s (+ 2)
-          b = last (s ^. stack)
-      '\t' : '\t' : _ -> heap %~ Map.insert b a $ stack %~ init $ s1
+          c2 = not $ null $ s^.stack
+          b = if c2 then Just (last (s^.stack)) else Nothing
+          cs = case a of
+            Just a' -> case b of
+                          Just b' -> heap %~ Map.insert b' a' $ stack %~ init $ s1
+                          Nothing -> errState "Empty Stack"
+            Nothing -> errState "End of input"
+      '\t' : '\t' : _ -> cs
         where
           (a, s1) = parseNumberFromInput $ moveCur s (+ 2)
-          b = last (s ^. stack)
+          c1 = not $ null (s^.stack)
+          b = if c1 then Just (last (s^.stack)) else Nothing
+          cs = case a of
+            Just a' -> case b of
+                          Just b' -> heap %~ Map.insert b' a' $ stack %~ init $ s1
+                          Nothing -> errState "Empty Stack"
+            Nothing -> s1
       _ : _ -> moveCur s (+1)
       [] -> s
 
