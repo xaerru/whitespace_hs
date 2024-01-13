@@ -147,8 +147,11 @@ impTabTab s = ns
           cs = stack %~ (\x -> take (length x - 2) x) $ addToMap (s1 ^. stack)
       '\t' : _ -> if null (s^.stack) then errState "Empty Stack" else cs
         where
-          pushStack s1 = stack %~ (\x -> init x ++ [Map.findWithDefault 0 (last x) (s1 ^. heap)]) $ s1
-          cs = pushStack $ moveCur s (+ 1)
+          hval = Map.lookup (last (s^.stack)) (s^.heap)
+          pushStack s1 val = stack %~ (\x -> init x ++ [val]) $ s1
+          cs = case hval of
+            Just val -> pushStack s val
+            Nothing  -> errState "Heap Address not found"
       _ : _ -> moveCur s (+1)
       [] -> s
 
@@ -159,8 +162,12 @@ impTabLineFeed :: LangState -> LangState
 impTabLineFeed s = ns
   where
     ns = case dropBeforeCursor s of
-      ' ' : ' ' : _ -> stack %~ init $ output %~ (++ [chr $ last (s ^. stack)]) $ moveCur s (+ 2)
-      ' ' : '\t' : _ -> stack %~ init $ output %~ (++ (show $ last (s ^. stack))) $ moveCur s (+ 2)
+      ' ' : ' ' : _ -> if null (s^.stack) then errState "Empty Stack" else cs
+        where
+          cs = stack %~ init $ output %~ (++ [chr $ last (s ^. stack)]) $ moveCur s (+ 2)
+      ' ' : '\t' : _ -> if null (s^.stack) then errState "Empty Stack" else cs
+        where
+          cs = stack %~ init $ output %~ (++ (show $ last (s ^. stack))) $ moveCur s (+ 2)
       '\t' : ' ' : _ -> heap %~ Map.insert b a $ stack %~ init $ s1
         where
           a = ord $ head (s ^. input)
