@@ -29,9 +29,9 @@ cursorAfterNextTerminal s = np
   where
     ocur = view (prog . cursor) s
     co = view (prog . code) s
-    ncur = '\n' `elemIndex` drop (ocur + 1) co
+    ncur = '\n' `elemIndex` drop ocur co
     np = case ncur of
-      Just n -> set (prog . cursor) (n + ocur + 2) s
+      Just n -> set (prog . cursor) (n + ocur + 1) s
       Nothing -> set lerror "Error" s
 
 dropBeforeCursor :: LangState -> String
@@ -207,14 +207,6 @@ impLineFeed :: LangState -> LangState
 impLineFeed s = ns
   where
     ns = case dropBeforeCursor s of
-      ' ' : ' ' : _ -> nss
-        where
-          s1 = moveCur s (+ 2)
-          l = parseLabel $ dropBeforeCursor s1
-          s2 = cursorAfterNextTerminal s1
-          nss = case l of
-            Just n -> labels %~ Map.insert n (s2 ^. prog . cursor) $ s2
-            Nothing -> lerror %~ const "LabelParseError" $ s2
       ' ' : '\t' : _ -> nss
         where
           s1 = moveCur s (+ 2)
@@ -224,12 +216,66 @@ impLineFeed s = ns
           nss = case l of
             Just n -> prog . cursor %~ const (Map.findWithDefault 0 n (s ^. labels)) $ s3
             Nothing -> lerror %~ const "LabelParseError" $ s2
+      ' ' : '\n' : _ -> nss
+        where
+          s1 = moveCur s (+ 2)
+          l = parseLabel $ dropBeforeCursor s1
+          s2 = cursorAfterNextTerminal s1
+          nss = case l of
+            Just n -> case Map.lookup n (s^.labels) of
+                        Just cur -> prog.cursor %~ const cur $ s2
+                        Nothing  -> errState "Couldn't find label"
+            Nothing-> errState "Couldn't Parse label"
+      '\t' : ' ' : _ -> nss
+        where
+          s1 = moveCur s (+ 2)
+          l = parseLabel $ dropBeforeCursor s1
+          s2 = cursorAfterNextTerminal s1
+          c1 = not $ null (s2^.stack)
+          ms3 = if c1 then Just (stack %~ init $ s2) else Nothing
+          nss = case l of
+            Just n -> case Map.lookup n (s^.labels) of
+                        Just cur -> case ms3 of
+                                      Just s3 -> prog.cursor %~ (\ocur -> if last (s2^.stack) == 0 then cur else ocur) $ s3
+                                      Nothing -> errState "Empty Stack"
+                        Nothing  -> errState "Couldn't find label"
+            Nothing-> errState "Couldn't Parse label"
+      '\t' : '\t' : _ -> nss
+        where
+          s1 = moveCur s (+ 2)
+          l = parseLabel $ dropBeforeCursor s1
+          s2 = cursorAfterNextTerminal s1
+          c1 = not $ null (s2^.stack)
+          ms3 = if c1 then Just (stack %~ init $ s2) else Nothing
+          nss = case l of
+            Just n -> case Map.lookup n (s^.labels) of
+                        Just cur -> case ms3 of
+                                      Just s3 -> prog.cursor %~ (\ocur -> if last (s2^.stack) < 0 then cur else ocur) $ s3
+                                      Nothing -> errState "Empty Stack"
+                        Nothing  -> errState "Couldn't find label"
+            Nothing-> errState "Couldn't Parse label"
       '\t' : '\n' : _ ->
         if (s ^. prog . counter) == (-1)
           then moveCur s (+ 2)
           else prog . cursor %~ const (-1) $ prog . cursor %~ const (s ^. prog . counter) $ s
       _ : _ -> moveCur s (+1)
       [] -> s
+
+-- TODO: Figure out a way of processing all the labels before computation
+processLabels :: LangState -> LangState
+processLabels s = ns
+  where
+    ns = case dropBeforeCursor s of
+      '\n' : ' ' : ' ' : _ -> nss
+        where
+          s1 = moveCur s (+ 3)
+          l = parseLabel $ dropBeforeCursor s1
+          s2 = cursorAfterNextTerminal s1
+          nss = case l of
+            Just n -> processLabels $ labels %~ Map.insert n (s2 ^. prog . cursor) $ s2
+            Nothing -> errState "Couldn't parse label"
+      _ : _ -> processLabels $ moveCur s (+ 1)
+      [] -> prog.cursor %~ const 0 $ s
 
 process :: LangState -> LangState
 process s = ns
@@ -247,7 +293,7 @@ whitespace :: String -> String -> Result
 whitespace "" "" = Left "error"
 whitespace c i = r
   where
-    s = process $ makeLangState c i
+    s = process $ processLabels $ makeLangState c i
     r = case s^.lerror of
           "" -> Right (s^.output)
           _  -> Left (s^.lerror)
