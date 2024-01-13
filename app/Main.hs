@@ -60,9 +60,9 @@ parseNumber s
     ns = cursorAfterNextTerminal s
     e = case r of
       Just n -> (n, ns)
-      Nothing -> (0, set lerror "NumParseError" ns)
-parseNumber (LangState (Prog (_ : _) _ _) _ _ _ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
-parseNumber (LangState (Prog [] _ _) _ _ _ _ _ _) = (0, set lerror "NumParseError" (makeLangState "" ""))
+      Nothing -> (0, set lerror "N1umParseError" ns)
+parseNumber (LangState (Prog (_ : _) _ _) _ _ _ _ _ _) = (0, set lerror "N2umParseError" (makeLangState "" ""))
+parseNumber (LangState (Prog [] _ _) _ _ _ _ _ _) = (0, set lerror "N3umParseError" (makeLangState "" ""))
 
 parseNumberMoveCur :: LangState -> (Int -> Int) -> (Int, LangState)
 parseNumberMoveCur s f = parseNumber $ moveCur s f
@@ -207,6 +207,7 @@ impLineFeed :: LangState -> LangState
 impLineFeed s = ns
   where
     ns = case dropBeforeCursor s of
+      ' ' : ' ' : _ -> cursorAfterNextTerminal $ moveCur s (+ 2)
       ' ' : '\t' : _ -> nss
         where
           s1 = moveCur s (+ 2)
@@ -215,7 +216,7 @@ impLineFeed s = ns
           s3 = prog . counter %~ const (s2 ^. prog . cursor) $ s2
           nss = case l of
             Just n -> prog . cursor %~ const (Map.findWithDefault 0 n (s ^. labels)) $ s3
-            Nothing -> lerror %~ const "LabelParseError" $ s2
+            Nothing -> lerror %~ const "LabelParseError" $ s3
       ' ' : '\n' : _ -> nss
         where
           s1 = moveCur s (+ 2)
@@ -258,6 +259,7 @@ impLineFeed s = ns
         if (s ^. prog . counter) == (-1)
           then moveCur s (+ 2)
           else prog . cursor %~ const (-1) $ prog . cursor %~ const (s ^. prog . counter) $ s
+      '\n' : '\n' : _ -> s
       _ : _ -> moveCur s (+1)
       [] -> s
 
@@ -266,14 +268,53 @@ processLabels :: LangState -> LangState
 processLabels s = ns
   where
     ns = case dropBeforeCursor s of
-      '\n' : ' ' : ' ' : _ -> nss
-        where
-          s1 = moveCur s (+ 3)
-          l = parseLabel $ dropBeforeCursor s1
-          s2 = cursorAfterNextTerminal s1
-          nss = case l of
-            Just n -> processLabels $ labels %~ Map.insert n (s2 ^. prog . cursor) $ s2
-            Nothing -> errState "Couldn't parse label"
+      ' ' : _ -> case dropBeforeCursor (moveCur s (+ 1)) of
+                  ' ' : _ -> processLabels $ snd $ parseNumberMoveCur s (+ 2)
+                  '\t' : ' ' : _ -> processLabels $ snd $ parseNumberMoveCur s (+ 3)
+                  '\t' : '\n' : _ -> processLabels $ snd $ parseNumberMoveCur s (+ 3)
+                  '\n' : ' ' : _ -> processLabels $ moveCur s (+ 3)
+                  '\n' : '\t' : _ -> processLabels $ moveCur s (+ 3)
+                  '\n' : '\n' : _ -> processLabels $ moveCur s (+ 3)
+                  _ : _ -> processLabels $ moveCur s (+ 2)
+                  [] -> prog.cursor %~ const 0 $ s
+      '\t' : ' ' : _ -> case dropBeforeCursor (moveCur s (+ 2)) of
+                  ' ' : ' ' : _ -> processLabels $ moveCur s (+ 4)
+                  ' ' : '\t' : _ -> processLabels $ moveCur s (+ 4)
+                  ' ' : '\n' : _ -> processLabels $ moveCur s (+ 4)
+                  '\t' : ' ' : _ -> processLabels $ moveCur s (+ 4)
+                  '\t' : '\t' : _ -> processLabels $ moveCur s (+ 4)
+                  _ : _ -> processLabels $ moveCur s (+ 3)
+                  [] -> prog.cursor %~ const 0 $ s
+      '\t' : '\t' : _ -> case dropBeforeCursor (moveCur s (+ 2)) of
+                  ' ' : _ -> processLabels $ moveCur s (+ 3)
+                  '\t' : _ -> processLabels $ moveCur s (+ 3)
+                  _ : _ -> processLabels $ moveCur s (+ 3)
+                  [] -> prog.cursor %~ const 0 $ s
+      '\t' : '\n' : _ -> case dropBeforeCursor (moveCur s (+ 2)) of
+                  ' ' : ' ' : _ -> processLabels $ moveCur s (+ 4)
+                  ' ' : '\t' : _ -> processLabels $ moveCur s (+ 4)
+                  '\t' : ' ' : _ -> processLabels $ moveCur s (+ 4)
+                  '\t' : '\t' : _ -> processLabels $ moveCur s (+ 4)
+                  _ : _ -> processLabels $ moveCur s (+ 3)
+                  [] -> prog.cursor %~ const 0 $ s
+      '\n' : _ -> case dropBeforeCursor (moveCur s (+ 1)) of
+                  ' ' : ' ' : _ -> nss
+                    where
+                      s1 = moveCur s (+ 3)
+                      l = parseLabel $ dropBeforeCursor s1
+                      s2 = cursorAfterNextTerminal s1
+                      nss = case l of
+                        Just n -> processLabels $ labels %~ Map.insert n (s2 ^. prog . cursor) $ s2
+                        Nothing -> errState "Couldn't parse label"
+                  ' ' : '\t' : _ -> processLabels $ cursorAfterNextTerminal $ moveCur s (+ 3)
+                  ' ' : '\n' : _ -> processLabels $ cursorAfterNextTerminal $ moveCur s (+ 3)
+                  '\t' : ' ' : _ -> processLabels $ cursorAfterNextTerminal $ moveCur s (+ 3)
+                  '\t' : '\t' : _ -> processLabels $ cursorAfterNextTerminal $ moveCur s (+ 3)
+                  '\t' : '\n' : _ -> processLabels $ moveCur s (+ 3)
+                  '\n' : '\n' : _ -> processLabels $ moveCur s (+ 3)
+                  _ : _ -> processLabels $ moveCur s (+ 2)
+                  [] -> prog.cursor %~ const 0 $ s
+
       _ : _ -> processLabels $ moveCur s (+ 1)
       [] -> prog.cursor %~ const 0 $ s
 
