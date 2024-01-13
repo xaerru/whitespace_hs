@@ -134,7 +134,7 @@ impSpace s = ns
         where
           s1 = moveCur s (+ 2)
           cs = stack %~ init $ s1
-      _ : _ -> moveCur s (+ 1)
+      _ : _ -> errState "Invalid Command"
       [] -> s
 
 stackBinOp :: (Int -> Int -> Int) -> LangState -> LangState
@@ -157,7 +157,7 @@ impTabSpace s = ns
         where
           check = null (s ^. stack) || last (s ^. stack) /= 0
           cs = stackBinOp mod $ moveCur s (+ 2)
-      _ : _ -> moveCur s (+ 1)
+      _ : _ -> errState "Invalid Command"
       [] -> s
 
 impTabTab :: LangState -> LangState
@@ -176,7 +176,7 @@ impTabTab s = ns
           cs = case hval of
             Just val -> pushStack (moveCur s (+ 1)) val
             Nothing -> errState "Heap Address not found"
-      _ : _ -> moveCur s (+ 1)
+      _ : _ -> errState "Invalid Command"
       [] -> s
 
 parseNumberFromInput :: LangState -> (Maybe Int, LangState)
@@ -223,7 +223,7 @@ impTabLineFeed s = ns
               Just b' -> heap %~ Map.insert b' a' $ stack %~ init $ s1
               Nothing -> errState "Empty Stack"
             Nothing -> s1
-      _ : _ -> moveCur s (+ 1)
+      _ : _ -> errState "Invalid Command"
       [] -> s
 
 impLineFeed :: LangState -> LangState
@@ -282,10 +282,9 @@ impLineFeed s = ns
             Nothing -> errState "Couldn't Parse label"
       '\t' : '\n' : _ -> prog . counter %~ init $ prog . cursor %~ (\_ -> last (s ^. prog . counter)) $ s
       '\n' : '\n' : _ -> moveCur s (const (length (s ^. prog . code)))
-      _ : _ -> moveCur s (+ 1)
+      _ : _ -> errState "Invalid Command"
       [] -> s
 
--- TODO: Figure out a way of processing all the labels before computation
 processLabels :: LangState -> LangState
 processLabels s = ns
   where
@@ -350,7 +349,7 @@ process s = ns
       '\t' : ' ' : _ -> process $ impTabSpace (moveCur s (+ 2))
       '\t' : '\t' : _ -> process $ impTabTab (moveCur s (+ 2))
       '\t' : '\n' : _ -> process $ impTabLineFeed (moveCur s (+ 2))
-      _ : _ -> process $ moveCur s (+ 1)
+      _ : _ -> errState "Invalid Command"
       [] -> s
 
 whitespace :: String -> String -> Result
