@@ -150,7 +150,7 @@ impTabTab s = ns
           hval = Map.lookup (last (s^.stack)) (s^.heap)
           pushStack s1 val = stack %~ (\x -> init x ++ [val]) $ s1
           cs = case hval of
-            Just val -> pushStack s val
+            Just val -> pushStack (moveCur s (+ 1)) val
             Nothing  -> errState "Heap Address not found"
       _ : _ -> moveCur s (+1)
       [] -> s
