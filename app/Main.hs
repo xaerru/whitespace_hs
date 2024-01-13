@@ -259,7 +259,7 @@ impLineFeed s = ns
         if (s ^. prog . counter) == (-1)
           then moveCur s (+ 2)
           else prog . cursor %~ const (-1) $ prog . cursor %~ const (s ^. prog . counter) $ s
-      '\n' : '\n' : _ -> s
+      '\n' : '\n' : _ -> moveCur s (const (length (s^.prog.code)))
       _ : _ -> moveCur s (+1)
       [] -> s
 
