@@ -238,7 +238,9 @@ impLineFeed s = ns
           s2 = cursorAfterNextTerminal s1
           s3 = prog . counter %~ (++[s2 ^. prog . cursor]) $ s2
           nss = case l of
-            Just n -> prog . cursor %~ const (Map.findWithDefault 0 n (s ^. labels)) $ s3
+            Just n -> case Map.lookup n (s ^. labels) of
+                        Just cur -> prog . cursor %~ const cur $ s3
+                        Nothing  -> errState "Label not found"
             Nothing -> lerror %~ const "LabelParseError" $ s3
       ' ' : '\n' : _ -> nss
         where
@@ -324,7 +326,9 @@ processLabels s = ns
             l = parseLabel $ dropBeforeCursor s1
             s2 = cursorAfterNextTerminal s1
             nss = case l of
-              Just n -> processLabels $ labels %~ Map.insert n (s2 ^. prog . cursor) $ s2
+              Just n -> case Map.lookup n (s2 ^. labels) of
+                            Just _ -> errState "Duplicate labels"
+                            Nothing-> processLabels $ labels %~ Map.insert n (s2 ^. prog . cursor) $ s2
               Nothing -> errState "Couldn't parse label"
         ' ' : '\t' : _ -> processLabels $ cursorAfterNextTerminal $ moveCur s (+ 3)
         ' ' : '\n' : _ -> processLabels $ cursorAfterNextTerminal $ moveCur s (+ 3)
