@@ -73,6 +73,9 @@ parseLabel ('\n' : _) = Just []
 parseLabel (_ : cs) = parseLabel cs
 parseLabel [] = Nothing
 
+errState :: String -> LangState
+errState msg = lerror %~ const msg $ makeLangState "" ""
+
 impSpace :: LangState -> LangState
 impSpace s = ns
   where
@@ -80,18 +83,34 @@ impSpace s = ns
       ' ' : _ -> stack %~ (++ [n]) $ s1
         where
           (n, s1) = parseNumberMoveCur s (+ 1)
-      '\t' : ' ' : _ -> stack %~ (\x -> x ++ [x !! (length x - n - 1)]) $ s1
+      '\t' : ' ' : _ -> if check then cs else errState "Index out of range"
         where
           (n, s1) = parseNumberMoveCur s (+ 2)
+          sl = length (s1^.stack)
+          idx = sl - n - 1
+          check = idx <= sl-1 && idx >= 0
+          cs = stack %~ (\x -> x ++ [x !! (length x - n - 1)]) $ s1
       '\t' : '\n' : _ ->
         if n >= length (view stack s1) || n < 0
-          then stack %~ (\x -> [last x]) $ s1
-          else stack %~ (\x -> take (length x - n - 1) x ++ [last x]) $ s1
-        where
+          then if null (s1^.stack) then errState "Empty Stack" else cs
+          else os
+            where
           (n, s1) = parseNumberMoveCur s (+ 2)
-      '\n' : ' ' : _ -> stack %~ (\x -> x ++ [last x]) $ moveCur s (+ 2)
-      '\n' : '\t' : _ -> stack %~ (\x -> take (length x - 2) x ++ [last x, last $ init x]) $ moveCur s (+ 2)
-      '\n' : '\n' : _ -> stack %~ init $ moveCur s (+ 2)
+          cs = stack %~ (\x -> [last x]) $ s1
+          os =  stack %~ (\x -> take (length x - n - 1) x ++ [last x]) $ s1
+
+      '\n' : ' ' : _ -> if null (s^.stack) then errState "Empty Stack" else cs
+        where
+          s1 = moveCur s (+ 2)
+          cs = stack %~ (\x -> x ++ [last x]) $ s1
+      '\n' : '\t' : _ ->  if length (s^.stack) >= 2 then cs else errState "Less than 2 values on the stack"
+        where
+          s1 = moveCur s (+ 2)
+          cs = stack %~ (\x -> take (length x - 2) x ++ [last x, last $ init x]) $ s1
+      '\n' : '\n' : _ -> if null (s^.stack) then errState "Empty Stack" else cs
+        where
+          s1 = moveCur s (+ 2)
+          cs = stack %~ init $ s1
       _ : _ -> moveCur s (+1)
       [] -> s
 
