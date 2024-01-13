@@ -119,7 +119,6 @@ stackBinOp binop s = if length (s^.stack) >= 2 then cs else errState "Less than 
   where
     cs = stack %~ (\x -> take (length x - 2) x ++ [binop (x !! (length x - 2)) (x !! (length x - 1))]) $ s
 
-
 impTabSpace :: LangState -> LangState
 impTabSpace s = ns
   where
@@ -127,12 +126,14 @@ impTabSpace s = ns
       ' ' : ' ' : _ -> stackBinOp (+) $ moveCur s (+ 2)
       ' ' : '\t' : _ -> stackBinOp (-) $ moveCur s (+ 2)
       ' ' : '\n' : _ -> stackBinOp (*) $ moveCur s (+ 2)
-      '\t' : ' ' : _ -> if check then stackBinOp div $ moveCur s (+ 2) else errState "Divide By Zero Error"
+      '\t' : ' ' : _ -> if check then cs else errState "Divide By Zero Error"
         where
-          check = last (s^.stack) /= 0
-      '\t' : '\t' : _ -> if check then stackBinOp mod $ moveCur s (+ 2) else errState "Divide By Zero Error"
+          check = null (s^.stack) || last (s^.stack) /= 0
+          cs = stackBinOp div $ moveCur s (+ 2)
+      '\t' : '\t' : _ -> if check then cs else errState "Divide By Zero Error"
         where
-          check = last (s^.stack) /= 0
+          check = null (s^.stack) || last (s^.stack) /= 0
+          cs = stackBinOp mod $ moveCur s (+ 2)
       _ : _ -> moveCur s (+1)
       [] -> s
 
