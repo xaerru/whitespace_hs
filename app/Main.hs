@@ -17,7 +17,9 @@ type Result = Either ErrorMsg String
 data Prog = Prog
   { _code :: String,
     _cursor :: Int,
-    _counter :: [Int]
+    _counter :: [Int],
+    _insideSubroutine :: Int,
+    _reachend :: Int
   }
   deriving (Show)
 
@@ -38,7 +40,7 @@ makeLenses ''LangState
 makeLangState :: String -> String -> LangState
 makeLangState c i =
   LangState
-    { _prog = Prog {_code = filter (\x -> x == ' ' || x == '\t' || x == '\n') c, _cursor = 0, _counter = []},
+    { _prog = Prog {_code = filter (\x -> x == ' ' || x == '\t' || x == '\n') c, _cursor = 0, _counter = [], _insideSubroutine = 0, _reachend = 0},
       _input = i,
       _output = "",
       _stack = [],
@@ -84,8 +86,8 @@ parseNumber s
     e = case r of
       Just n -> (n, ns)
       Nothing -> (0, set lerror "N1umParseError" ns)
-parseNumber (LangState (Prog (_ : _) _ _) _ _ _ _ _ _) = (0, set lerror "N2umParseError" (makeLangState "" ""))
-parseNumber (LangState (Prog [] _ _) _ _ _ _ _ _) = (0, set lerror "N3umParseError" (makeLangState "" ""))
+parseNumber (LangState (Prog (_ : _) _ _ _ _) _ _ _ _ _ _) = (0, set lerror "N2umParseError" (makeLangState "" ""))
+parseNumber (LangState (Prog [] _ _ _ _) _ _ _ _ _ _) = (0, set lerror "N3umParseError" (makeLangState "" ""))
 
 parseNumberMoveCur :: LangState -> (Int -> Int) -> (Int, LangState)
 parseNumberMoveCur s f = parseNumber $ moveCur s f
@@ -135,7 +137,7 @@ impSpace s = ns
           s1 = moveCur s (+ 2)
           cs = stack %~ init $ s1
       _ : _ -> errState "Invalid Command"
-      [] -> s
+      [] -> subroutineNoEnd s
 
 stackBinOp :: (Int -> Int -> Int) -> LangState -> LangState
 stackBinOp binop s = if length (s ^. stack) >= 2 then cs else errState "Less than 2 elements in stack"
@@ -158,7 +160,7 @@ impTabSpace s = ns
           check = null (s ^. stack) || last (s ^. stack) /= 0
           cs = stackBinOp mod $ moveCur s (+ 2)
       _ : _ -> errState "Invalid Command"
-      [] -> s
+      [] -> subroutineNoEnd s
 
 impTabTab :: LangState -> LangState
 impTabTab s = ns
@@ -177,7 +179,7 @@ impTabTab s = ns
             Just val -> pushStack (moveCur s (+ 1)) val
             Nothing -> errState "Heap Address not found"
       _ : _ -> errState "Invalid Command"
-      [] -> s
+      [] -> subroutineNoEnd s
 
 parseNumberFromInput :: LangState -> (Maybe Int, LangState)
 parseNumberFromInput s = acs
@@ -224,7 +226,10 @@ impTabLineFeed s = ns
               Nothing -> errState "Empty Stack"
             Nothing -> s1
       _ : _ -> errState "Invalid Command"
-      [] -> s
+      [] -> subroutineNoEnd s
+
+subroutineNoEnd :: LangState -> LangState
+subroutineNoEnd s = if ((s ^. (prog . insideSubroutine)) == 0) && ((s ^. (prog . reachend)) == 1) then s else errState "Subroutine doesn't end"
 
 impLineFeed :: LangState -> LangState
 impLineFeed s = ns
@@ -235,7 +240,7 @@ impLineFeed s = ns
         where
           s1 = moveCur s (+ 2)
           l = parseLabel $ dropBeforeCursor s1
-          s2 = cursorAfterNextTerminal s1
+          s2 = prog . insideSubroutine %~ (+ 1) $ cursorAfterNextTerminal s1
           s3 = prog . counter %~ (++[s2 ^. prog . cursor]) $ s2
           nss = case l of
             Just n -> case Map.lookup n (s ^. labels) of
@@ -280,10 +285,17 @@ impLineFeed s = ns
                 Nothing -> errState "Empty Stack"
               Nothing -> errState "Couldn't find label"
             Nothing -> errState "Couldn't Parse label"
-      '\t' : '\n' : _ -> prog . counter %~ init $ prog . cursor %~ (\_ -> last (s ^. prog . counter)) $ s
-      '\n' : '\n' : _ -> moveCur s (const (length (s ^. prog . code)))
+      '\t' : '\n' : _ -> if (s ^. (prog . insideSubroutine)) > 0 then cs else errState "Return outside of subroutine"
+        where
+            cs = prog . counter %~ init $ prog . cursor %~ (\_ -> last (s ^. prog . counter)) $ prog . insideSubroutine %~ flip (-) 1 $ s
+      '\n' : '\n' : _ -> cs
+        where
+            c1 = (s ^. (prog . insideSubroutine)) == 0
+            cs = if c1 then
+                 prog . reachend %~ const 1 $  moveCur s (const (length (s ^. prog . code)))
+                 else prog . reachend %~ const 1 $ prog . insideSubroutine %~ (\x -> if x /= 0 then x-1 else 0) $ moveCur s (const (length (s ^. prog . code)))
       _ : _ -> errState "Invalid Command"
-      [] -> s
+      [] -> subroutineNoEnd s
 
 processLabels :: LangState -> LangState
 processLabels s = ns
@@ -350,7 +362,7 @@ process s = ns
       '\t' : '\t' : _ -> process $ impTabTab (moveCur s (+ 2))
       '\t' : '\n' : _ -> process $ impTabLineFeed (moveCur s (+ 2))
       _ : _ -> errState "Invalid Command"
-      [] -> s
+      [] -> subroutineNoEnd s
 
 whitespace :: String -> String -> Result
 whitespace "" "" = Left "error"
